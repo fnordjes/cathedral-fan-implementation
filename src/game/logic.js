@@ -100,10 +100,11 @@ export function hasLegalMove(board, color, stock) {
   return false;
 }
 
-// 4-connected flood components of cells that are NOT buildings of `color`.
+// 8-connected flood components of cells that are NOT buildings of `color`.
 // Such "open" cells include empty squares, the opponent's buildings and the
-// Cathedral. Each component is therefore bounded only by `color`'s buildings
-// and the city wall.
+// Cathedral. Diagonal connectivity is deliberate (see the loop below): it makes
+// a region sealed only when `color`'s buildings join edge-to-edge, matching the
+// rule that a corner-to-corner contact does not form an enclosing wall.
 function openComponents(board, color) {
   const visited = [];
   for (let y = 0; y < BOARD_SIZE; y++) visited.push(new Array(BOARD_SIZE).fill(false));
@@ -123,7 +124,15 @@ function openComponents(board, color) {
       while (stack.length) {
         const [cx, cy] = stack.pop();
         comp.push([cx, cy]);
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        // 8-way (diagonal) flood: empty space leaks through corner gaps. Per the
+        // rules, buildings must meet "wall to wall" to enclose — a corner-to-
+        // corner join does NOT form a boundary, so space passes through it.
+        // Allowing diagonal moves makes a region sealed only when the enclosing
+        // buildings are edge-connected (a true wall), not merely corner-touching.
+        for (const [dx, dy] of [
+          [1, 0], [-1, 0], [0, 1], [0, -1],
+          [1, 1], [1, -1], [-1, 1], [-1, -1],
+        ]) {
           const nx = cx + dx;
           const ny = cy + dy;
           if (!inBounds(nx, ny) || visited[ny][nx] || isBarrier(nx, ny)) continue;
