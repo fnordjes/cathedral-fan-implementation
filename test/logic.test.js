@@ -110,3 +110,16 @@ test('scoreStock sums piece sizes', () => {
   assert.equal(scoreStock(buildInventory('light')), 47);
   assert.equal(scoreStock([]), 0);
 });
+
+test('resolveTerritory: a wall splitting the board into equal halves claims neither', () => {
+  const b = createBoard();
+  // 4-connected staircase wall: column 4 rows 0-5, column 5 rows 4-9 -> 44 / 44.
+  const wall = [];
+  for (let y = 0; y <= 5; y++) wall.push([4, y]);
+  for (let y = 4; y <= 9; y++) wall.push([5, y]);
+  placeBuilding(b, 'dark', 'castle', 0, wall);
+  assert.deepEqual(resolveTerritory(b, 'dark', false), []);
+  for (let y = 0; y < 10; y++)
+    for (let x = 0; x < 10; x++)
+      if (b.cells[y][x] === null) assert.equal(b.owner[y][x], null, `cell ${x},${y} claimed`);
+});

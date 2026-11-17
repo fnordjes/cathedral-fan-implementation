@@ -8,23 +8,7 @@
 
 import path from 'node:path';
 import { playGame } from './simulate.js';
-import { makeAgent } from './agents.js';
-import { loadNeuralAgent, modelExists } from './neuralNet.js';
-import { loadMctsAgent, mctsHeuristicAgent, mctsRolloutAgent } from './mcts.js';
-
-async function buildAgent(name, seed, netDir, flags) {
-  const sims = Number(flags.sims || 80);
-  if (name === 'mcts-r') return mctsRolloutAgent({ seed, simulations: sims, policy: flags.rollout || 'random' });
-  if (name === 'mcts-h') return mctsHeuristicAgent({ seed, simulations: sims });
-  if (name === 'neural' || name === 'mcts') {
-    if (!modelExists(netDir)) {
-      throw new Error(`no model at ${netDir} — train one first: npm run train`);
-    }
-    if (name === 'mcts') return loadMctsAgent(netDir, { seed, simulations: sims });
-    return loadNeuralAgent(netDir, { seed });
-  }
-  return makeAgent(name, { seed });
-}
+import { buildAgent } from './buildAgent.js';
 
 async function main() {
   const args = process.argv.slice(2);

@@ -17,23 +17,11 @@ import bgioClient from 'boardgame.io/dist/cjs/client.js';
 import bgioMultiplayer from 'boardgame.io/dist/cjs/multiplayer.js';
 import { Cathedral } from '../game/cathedral.js';
 import { PLAYER_COLOR, buildingMoves, cathedralMoves } from './moves.js';
-import { makeAgent } from './agents.js';
-import { loadNeuralAgent, modelExists } from './neuralNet.js';
-import { loadMctsAgent, mctsHeuristicAgent, mctsRolloutAgent } from './mcts.js';
+import { makeRng } from './rng.js';
+import { buildAgent } from './buildAgent.js';
 
 const { Client, LobbyClient } = bgioClient;
 const { SocketIO } = bgioMultiplayer;
-
-async function buildAgent(name, seed, netDir, sims = 80) {
-  if (name === 'mcts-r') return mctsRolloutAgent({ seed, simulations: Number(sims), policy: 'random' });
-  if (name === 'mcts-h') return mctsHeuristicAgent({ seed, simulations: Number(sims) });
-  if (name === 'neural' || name === 'mcts') {
-    if (!modelExists(netDir)) throw new Error(`no model at ${netDir} — run: npm run train`);
-    if (name === 'mcts') return loadMctsAgent(netDir, { seed, simulations: Number(sims) });
-    return loadNeuralAgent(netDir, { seed });
-  }
-  return makeAgent(name, { seed });
-}
 
 // Drive one seat of a match until the game ends. Resolves with the gameover.
 function runBot({ server, matchID, playerID, credentials, agent }) {
@@ -51,49 +39,67 @@ function runBot({ server, matchID, playerID, credentials, agent }) {
     let acting = false;
     let lastKey = null;
     let done = false;
+    let watchdog = null;
+    const keyOf = (s) => `${s.ctx.turn}:${s.ctx.phase}`;
+    const fallback = makeRng(Number(playerID) + 1);
+
+    // Choose and send a move. A rejected move leaves the state unchanged, so
+    // no new update arrives to trigger another attempt; the watchdog notices
+    // the turn hasn't advanced and retries. From the 2nd retry on, a random
+    // legal move is played in case the agent keeps choosing the same bad move.
+    async function act(state, attempt) {
+      acting = true;
+      try {
+        const G = state.G;
+        const snap = {
+          board: G.board,
+          stock: G.stock,
+          placedCount: G.placedCount,
+          cathedralPlaced: G.cathedralPlaced,
+        };
+        const choose = (s, color, phase, moves) =>
+          attempt >= 2 ? fallback.pick(moves) : agent.act(s, color, phase, moves);
+        if (state.ctx.phase === 'placeCathedral') {
+          const moves = cathedralMoves(snap);
+          const m = await choose(snap, 'light', 'placeCathedral', moves);
+          client.moves.placeCathedral(m.oi, m.ox, m.oy);
+        } else {
+          const color = PLAYER_COLOR[playerID];
+          const moves = buildingMoves(snap, color);
+          if (!moves.length) return;
+          const m = await choose(snap, color, 'main', moves);
+          client.moves.placePiece(m.pieceId, m.instance, m.oi, m.ox, m.oy);
+        }
+      } catch (e) {
+        console.error(`[seat ${playerID}] error:`, e.message);
+      } finally {
+        acting = false;
+      }
+      clearTimeout(watchdog);
+      watchdog = setTimeout(() => {
+        const s = client.getState();
+        if (done || !s || s.ctx.gameover || s.ctx.currentPlayer !== playerID) return;
+        if (keyOf(s) !== lastKey || acting) return;
+        console.error(`[seat ${playerID}] move not accepted, retrying (attempt ${attempt + 1})`);
+        act(s, attempt + 1);
+      }, 3000);
+    }
 
     client.subscribe((state) => {
       if (!state || done) return;
       if (state.ctx.gameover) {
         done = true;
+        clearTimeout(watchdog);
         client.stop();
         resolve(state.ctx.gameover);
         return;
       }
       if (state.ctx.currentPlayer !== playerID) return;
 
-      const key = `${state.ctx.turn}:${state.ctx.phase}`;
+      const key = keyOf(state);
       if (acting || key === lastKey) return;
-      acting = true;
       lastKey = key;
-
-      (async () => {
-        try {
-          const G = state.G;
-          const snap = {
-            board: G.board,
-            stock: G.stock,
-            placedCount: G.placedCount,
-            cathedralPlaced: G.cathedralPlaced,
-          };
-          if (state.ctx.phase === 'placeCathedral') {
-            const moves = cathedralMoves(snap);
-            const m = await agent.act(snap, 'light', 'placeCathedral', moves);
-            client.moves.placeCathedral(m.oi, m.ox, m.oy);
-          } else {
-            const color = PLAYER_COLOR[playerID];
-            const moves = buildingMoves(snap, color);
-            if (moves.length) {
-              const m = await agent.act(snap, color, 'main', moves);
-              client.moves.placePiece(m.pieceId, m.instance, m.oi, m.ox, m.oy);
-            }
-          }
-        } catch (e) {
-          console.error(`[seat ${playerID}] error:`, e.message);
-        } finally {
-          acting = false;
-        }
-      })();
+      act(state, 0);
     });
 
     client.start();
@@ -126,8 +132,8 @@ async function main() {
     console.log(`Match ${matchID} created on ${server}`);
     console.log(`  Light = ${nameA}, Dark = ${nameB}. Spectate it from the web lobby.`);
 
-    const agentA = await buildAgent(nameA, 1, netDir, flags.sims);
-    const agentB = await buildAgent(nameB, 2, netDir, flags.sims);
+    const agentA = await buildAgent(nameA, 1, netDir, flags);
+    const agentB = await buildAgent(nameB, 2, netDir, flags);
     const [over] = await Promise.all([
       runBot({ server, matchID, playerID: '0', credentials: a.playerCredentials, agent: agentA }),
       runBot({ server, matchID, playerID: '1', credentials: b.playerCredentials, agent: agentB }),
@@ -145,7 +151,7 @@ async function main() {
       playerName: `${name}-bot`,
     });
     console.log(`Joined match ${matchID} as seat ${seat} (${name}).`);
-    const agent = await buildAgent(name, Number(seat) + 1, netDir, flags.sims);
+    const agent = await buildAgent(name, Number(seat) + 1, netDir, flags);
     const over = await runBot({
       server,
       matchID,

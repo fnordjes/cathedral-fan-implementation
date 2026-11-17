@@ -197,15 +197,15 @@ export function resolveTerritory(board, color, isFirstMove) {
   const comps = openComponents(board, color);
   if (comps.length <= 1) return []; // nothing sealed off
 
-  // Identify the commons (largest component); exclude it from claiming.
-  let commonsIdx = 0;
-  for (let i = 1; i < comps.length; i++) {
-    if (comps[i].length > comps[commonsIdx].length) commonsIdx = i;
-  }
+  // Identify the commons (largest component); exclude it from claiming. If
+  // several components tie for largest, none of them is "the" sealed-off
+  // pocket, so all of them stay commons — otherwise splitting the board into
+  // equal halves would claim one half purely by scan order.
+  const largest = Math.max(...comps.map((c) => c.length));
 
   const captured = [];
   for (let i = 0; i < comps.length; i++) {
-    if (i === commonsIdx) continue;
+    if (comps[i].length === largest) continue;
     const comp = comps[i];
     const pieces = piecesInComponent(board, comp);
     if (pieces.length >= 2) continue; // not enclosed for capture/claim
@@ -225,6 +225,44 @@ export function resolveTerritory(board, color, isFirstMove) {
 // Total squares occupied by a list of unplaced pieces (lower is better).
 export function scoreStock(stock) {
   return stock.reduce((sum, p) => sum + pieceSize(p.id), 0);
+}
+
+// A colour's starting stock: one entry per piece instance.
+export function initialStock(color) {
+  return buildInventory(color).map((p) => ({ id: p.id, instance: p.instance, size: p.size }));
+}
+
+// Apply a building placement to a game state (mutating). This is THE move
+// rule, shared by the boardgame.io move (server) and the AI simulator, so the
+// two can never disagree. `state` needs { board, stock, placedCount,
+// cathedralRemoved } — boardgame.io's G and the AI snapshot both qualify.
+//
+// Returns the captured piece descriptors, or null if the move is illegal
+// (piece not in stock, or cells not placeable); on null nothing is changed.
+export function applyBuildingMove(state, color, pieceId, instance, cells) {
+  const idx = state.stock[color].findIndex((p) => p.id === pieceId && p.instance === instance);
+  if (idx === -1) return null;
+  if (!canPlaceCells(state.board, color, cells)) return null;
+
+  placeBuilding(state.board, color, pieceId, instance, cells);
+  state.stock[color].splice(idx, 1);
+
+  const isFirstMove = state.placedCount[color] === 0;
+  const captured = resolveTerritory(state.board, color, isFirstMove);
+  state.placedCount[color] += 1;
+
+  for (const cap of captured) {
+    if (cap.kind === 'building') {
+      state.stock[cap.color].push({
+        id: cap.pieceId,
+        instance: cap.instance,
+        size: pieceSize(cap.pieceId),
+      });
+    } else if (cap.kind === 'cathedral') {
+      state.cathedralRemoved = true; // Cathedral, once captured, never returns.
+    }
+  }
+  return captured;
 }
 
 export { pieceSize, buildInventory };

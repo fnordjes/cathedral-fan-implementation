@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Cathedral - the game of the medieval city. Networked two-player browser implementation built on boardgame.io.",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "server": "node src/server/index.js",
     "client": "vite",
@@ -12,7 +15,7 @@
     "tournament": "node src/ai/tournament.js",
     "train": "node src/ai/train.js",
     "netbot": "node src/ai/netbot.js",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test test/"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",

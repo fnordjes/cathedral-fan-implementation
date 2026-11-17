@@ -5,29 +5,25 @@
 
 import {
   createBoard,
-  canPlaceCells,
-  placeBuilding,
   placeCathedral as placeCathedralCells,
-  resolveTerritory,
+  applyBuildingMove,
   hasLegalMove,
   scoreStock,
-  buildInventory,
+  initialStock,
   enumeratePlacements,
   otherColor,
   BOARD_SIZE,
 } from '../game/logic.js';
+import { pieceSize } from '../game/pieces.js';
+import { PLAYER_COLOR, COLOR_PLAYER } from '../game/cathedral.js';
 
-export const PLAYER_COLOR = { 0: 'light', 1: 'dark' };
-export const COLOR_PLAYER = { light: '0', dark: '1' };
-export { otherColor, scoreStock, hasLegalMove };
+export { PLAYER_COLOR, COLOR_PLAYER, otherColor, scoreStock, hasLegalMove, pieceSize };
 
 // A self-contained game snapshot used by the simulator and agents.
 export function initialState() {
-  const stock = (color) =>
-    buildInventory(color).map((p) => ({ id: p.id, instance: p.instance, size: p.size }));
   return {
     board: createBoard(),
-    stock: { light: stock('light'), dark: stock('dark') },
+    stock: { light: initialStock('light'), dark: initialStock('dark') },
     placedCount: { light: 0, dark: 0 },
     cathedralPlaced: false,
     cathedralRemoved: false,
@@ -90,25 +86,9 @@ export function applyMove(s, color, move) {
     s.cathedralPlaced = true;
     return [];
   }
-  const idx = s.stock[color].findIndex(
-    (p) => p.id === move.pieceId && p.instance === move.instance,
-  );
-  if (idx === -1) throw new Error(`piece ${move.pieceId}#${move.instance} not in ${color} stock`);
-  if (!canPlaceCells(s.board, color, move.cells)) throw new Error('illegal move applied');
-
-  placeBuilding(s.board, color, move.pieceId, move.instance, move.cells);
-  s.stock[color].splice(idx, 1);
-
-  const isFirstMove = s.placedCount[color] === 0;
-  const captured = resolveTerritory(s.board, color, isFirstMove);
-  s.placedCount[color] += 1;
-
-  for (const cap of captured) {
-    if (cap.kind === 'building') {
-      s.stock[cap.color].push({ id: cap.pieceId, instance: cap.instance, size: pieceSizeOf(cap.pieceId) });
-    } else if (cap.kind === 'cathedral') {
-      s.cathedralRemoved = true;
-    }
+  const captured = applyBuildingMove(s, color, move.pieceId, move.instance, move.cells);
+  if (captured === null) {
+    throw new Error(`illegal move applied: ${move.pieceId}#${move.instance} for ${color}`);
   }
   return captured;
 }
@@ -131,6 +111,3 @@ export function availableSpace(board, color) {
       if (board.cells[y][x] === null && board.owner[y][x] !== opp) n++;
   return n;
 }
-
-import { pieceSize as pieceSizeOf } from '../game/pieces.js';
-export { pieceSizeOf as pieceSize };

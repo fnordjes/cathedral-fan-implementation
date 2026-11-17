@@ -3,8 +3,8 @@ import { pieceOrientations, PIECE_NAMES, ROSTER, pieceSize } from '../game/piece
 import { canPlaceCells } from '../game/logic.js';
 import { buildingMoves, cathedralMoves } from '../ai/moves.js';
 import { makeAgent } from '../ai/agents.js';
+import { PLAYER_COLOR } from '../game/cathedral.js';
 
-const PLAYER_COLOR = { 0: 'light', 1: 'dark' };
 const SIZE = 10;
 const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 
@@ -79,7 +79,11 @@ export default function CathedralBoard({
   // Rotate with the R key.
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'r' || e.key === 'R') setOrientation((o) => o + 1);
+      if (e.key !== 'r' && e.key !== 'R') return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
+      const t = e.target;
+      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      setOrientation((o) => o + 1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -141,21 +145,34 @@ export default function CathedralBoard({
   const previewSet = new Set(preview.map(([x, y]) => `${x},${y}`));
   const onBoardPreview = preview.every(([x, y]) => x >= 0 && x < SIZE && y >= 0 && y < SIZE);
 
+  // Drop the selection once no copy of that piece is left in stock (e.g. the
+  // last Tavern was just placed), so the board stops previewing it.
+  const myStock = myColor ? G.stock[myColor] : null;
+  useEffect(() => {
+    if (selected && selected !== 'cathedral' && !myStock?.some((p) => p.id === selected.id)) {
+      setSelected(null);
+    }
+  }, [selected, myStock]);
+
   function handleCellClick(x, y) {
     if (!myActive || !selected || !shape) return;
     if (selected === 'cathedral') {
       moves.placeCathedral(oIdx, x, y);
     } else {
-      moves.placePiece(selected.id, selected.instance, oIdx, x, y);
+      // Resolve the concrete stock instance at click time: the one picked when
+      // the piece was selected may have been placed since (pieces of the same
+      // id are interchangeable), and captures can return instances to stock.
+      const inst = myStock?.find((p) => p.id === selected.id);
+      if (!inst) return;
+      moves.placePiece(selected.id, inst.instance, oIdx, x, y);
     }
     setHover(null);
   }
 
   function selectPiece(id) {
     if (!myColor) return;
-    const inst = G.stock[myColor].find((p) => p.id === id);
-    if (!inst) return;
-    setSelected({ id, instance: inst.instance });
+    if (!G.stock[myColor].some((p) => p.id === id)) return;
+    setSelected({ id });
     setOrientation(0);
   }
 

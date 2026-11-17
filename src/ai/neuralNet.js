@@ -12,7 +12,7 @@
 import tf from './tfBackend.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import { cloneState, applyMove, otherColor } from './moves.js';
+import { cloneState, applyMove, otherColor, hasLegalMove, scoreStock } from './moves.js';
 import { encode, INPUT_DIM } from './features.js';
 import { makeRng } from './rng.js';
 
@@ -75,6 +75,14 @@ export function predictValues(model, featureList) {
   });
 }
 
+// Final result of a finished game from `color`'s side: +1 win, 0 draw, -1 loss
+// (fewer leftover squares wins).
+function outcomeFor(state, color) {
+  const mine = scoreStock(state.stock[color]);
+  const theirs = scoreStock(state.stock[otherColor(color)]);
+  return mine < theirs ? 1 : mine > theirs ? -1 : 0;
+}
+
 export function neuralAgent(model, { seed = 1, epsilon = 0, name = 'neural' } = {}) {
   const rng = makeRng(seed);
   return {
@@ -84,16 +92,34 @@ export function neuralAgent(model, { seed = 1, epsilon = 0, name = 'neural' } = 
       if (phase === 'placeCathedral') return rng.pick(moves);
       if (epsilon > 0 && rng() < epsilon) return rng.pick(moves);
       const opp = otherColor(color);
-      const feats = moves.map((move) => {
+      // For each move, work out who moves next. Usually the opponent, but a
+      // player with no legal move is skipped, and if neither can move the game
+      // is over and the exact result is known. Scores are all expressed as
+      // "value for the opponent", so lower is better for us.
+      const scores = new Array(moves.length);
+      const feats = [];
+      const featSign = []; // [moveIndex, sign] per encoded position
+      moves.forEach((move, i) => {
         const next = cloneState(state);
         applyMove(next, color, move);
-        return encode(next, opp); // value for opponent in resulting position
+        if (hasLegalMove(next.board, opp, next.stock[opp])) {
+          feats.push(encode(next, opp));
+          featSign.push([i, 1]);
+        } else if (hasLegalMove(next.board, color, next.stock[color])) {
+          feats.push(encode(next, color)); // we move again: our value, negated
+          featSign.push([i, -1]);
+        } else {
+          scores[i] = -outcomeFor(next, color); // game over: exact result
+        }
       });
-      const values = predictValues(model, feats);
+      const values = feats.length ? predictValues(model, feats) : [];
+      featSign.forEach(([i, sign], k) => {
+        scores[i] = sign * values[k];
+      });
       let best = null;
       let bestScore = Infinity; // minimise opponent's value
       for (let i = 0; i < moves.length; i++) {
-        const score = values[i] + rng() * 1e-6;
+        const score = scores[i] + rng() * 1e-6;
         if (score < bestScore) {
           bestScore = score;
           best = moves[i];

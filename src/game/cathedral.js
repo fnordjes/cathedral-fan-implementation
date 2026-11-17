@@ -15,13 +15,12 @@ const INVALID_MOVE = 'INVALID_MOVE';
 import {
   createBoard,
   canPlaceCells,
-  placeBuilding,
+  absoluteCells,
   placeCathedral as placeCathedralCells,
-  resolveTerritory,
+  applyBuildingMove,
   hasLegalMove,
   scoreStock,
-  buildInventory,
-  pieceSize,
+  initialStock,
 } from './logic.js';
 import { pieceOrientations } from './pieces.js';
 
@@ -30,26 +29,10 @@ import { pieceOrientations } from './pieces.js';
 export const PLAYER_COLOR = { 0: 'light', 1: 'dark' };
 export const COLOR_PLAYER = { light: '0', dark: '1' };
 
-function stockFor(color) {
-  return buildInventory(color).map((p) => ({ id: p.id, instance: p.instance, size: p.size }));
-}
-
 function resolveOrientation(pieceId, color, orientationIndex) {
   const orients = pieceOrientations(pieceId, color);
   if (orientationIndex < 0 || orientationIndex >= orients.length) return null;
   return orients[orientationIndex];
-}
-
-function returnToStock(G, descriptor) {
-  if (descriptor.kind === 'building') {
-    G.stock[descriptor.color].push({
-      id: descriptor.pieceId,
-      instance: descriptor.instance,
-      size: pieceSize(descriptor.pieceId),
-    });
-  } else if (descriptor.kind === 'cathedral') {
-    G.cathedralRemoved = true; // Cathedral, once captured, never returns.
-  }
 }
 
 export const Cathedral = {
@@ -57,7 +40,7 @@ export const Cathedral = {
 
   setup: () => ({
     board: createBoard(),
-    stock: { light: stockFor('light'), dark: stockFor('dark') },
+    stock: { light: initialStock('light'), dark: initialStock('dark') },
     placedCount: { light: 0, dark: 0 },
     cathedralPlaced: false,
     cathedralRemoved: false,
@@ -78,7 +61,7 @@ export const Cathedral = {
           if (G.cathedralPlaced) return INVALID_MOVE;
           const shape = resolveOrientation('cathedral', 'light', orientationIndex);
           if (!shape) return INVALID_MOVE;
-          const cells = shape.map(([x, y]) => [x + ox, y + oy]);
+          const cells = absoluteCells(shape, ox, oy);
           if (!canPlaceCells(G.board, 'light', cells)) return INVALID_MOVE;
           placeCathedralCells(G.board, cells);
           G.cathedralPlaced = true;
@@ -113,24 +96,12 @@ export const Cathedral = {
           const color = PLAYER_COLOR[playerID];
           if (!color) return INVALID_MOVE;
 
-          const idx = G.stock[color].findIndex(
-            (p) => p.id === pieceId && p.instance === instance,
-          );
-          if (idx === -1) return INVALID_MOVE;
-
           const shape = resolveOrientation(pieceId, color, orientationIndex);
           if (!shape) return INVALID_MOVE;
-          const cells = shape.map(([x, y]) => [x + ox, y + oy]);
-          if (!canPlaceCells(G.board, color, cells)) return INVALID_MOVE;
+          const cells = absoluteCells(shape, ox, oy);
 
-          placeBuilding(G.board, color, pieceId, instance, cells);
-          G.stock[color].splice(idx, 1);
-
-          const isFirstMove = G.placedCount[color] === 0;
-          const captured = resolveTerritory(G.board, color, isFirstMove);
-          G.placedCount[color] += 1;
-
-          for (const cap of captured) returnToStock(G, cap);
+          const captured = applyBuildingMove(G, color, pieceId, instance, cells);
+          if (captured === null) return INVALID_MOVE;
           G.lastCaptured = captured;
           G.history.push({ color, pieceId, instance, cells, captured });
         },
