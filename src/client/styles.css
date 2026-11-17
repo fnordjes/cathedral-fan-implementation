@@ -207,3 +207,40 @@ body {
   cursor: pointer;
 }
 .lobby-wrap button:hover { background: #f6eeda; }
+
+/* ---------- Mode nav + vs-computer controls ---------- */
+.mode-nav {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.mode-nav button {
+  padding: 6px 14px;
+  border: 1px solid #b59a5e;
+  background: #fffdf8;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.mode-nav button:hover { background: #f6eeda; }
+.mode-nav button.active { background: #5b4636; color: #fff; border-color: #5b4636; }
+
+.ai-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  max-width: 980px;
+  margin: 0 auto 12px;
+  padding: 0 4px;
+}
+.ai-controls button {
+  padding: 5px 12px;
+  border: 1px solid #b59a5e;
+  background: #fffdf8;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ai-controls button:hover { background: #f6eeda; }
+.ai-controls button.sel-side { background: #a9842f; color: #fff; border-color: #a9842f; }

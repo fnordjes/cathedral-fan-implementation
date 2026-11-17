@@ -62,9 +62,16 @@ npm run client
 npm run dev
 ```
 
-Then open <http://localhost:5173> in **two** browser windows (or two machines).
-Create a match, have each player join a seat (Light = player 0, Dark = player 1),
-and play. Anyone can also **spectate** a running match from the lobby.
+Then open <http://localhost:5173>. The client opens in **Play vs computer** mode —
+a fully local game against the greedy AI that needs no server at all (pick your
+side, Dark or Light, and hit New game). Switch to **Play online** in the header
+to use the lobby: open it in **two** browser windows (or two machines), create a
+match, have each player join a seat (Light = player 0, Dark = player 1), and
+play. Anyone can also **spectate** a running match from the lobby.
+
+> "Play vs computer" runs the game and the bot entirely in the browser (two
+> boardgame.io clients over a shared in-memory transport; the AI seat is driven
+> by the pure-JS greedy agent), so `npm run server` is only needed for online play.
 
 To point the client at a remote server:
 

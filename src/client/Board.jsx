@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { pieceOrientations, PIECE_NAMES, ROSTER, pieceSize } from '../game/pieces.js';
 import { canPlaceCells } from '../game/logic.js';
+import { buildingMoves, cathedralMoves } from '../ai/moves.js';
+import { makeAgent } from '../ai/agents.js';
 
 const PLAYER_COLOR = { 0: 'light', 1: 'dark' };
 const SIZE = 10;
@@ -45,10 +47,20 @@ export default function CathedralBoard({
   isActive,
   isConnected,
   matchData,
+  aiColor = null, // '0' or '1' => that seat is played by the local AI
+  humanColor = null, // colour the human controls in AI mode
+  aiMoves = null, // move dispatcher for the AI seat (its own client)
 }) {
-  const myColor = PLAYER_COLOR[playerID] || null; // null => spectator
+  const aiMode = !!aiColor;
+  const aiColorName = aiColor ? PLAYER_COLOR[aiColor] : null;
+  const myColor = humanColor || PLAYER_COLOR[playerID] || null; // null => spectator
   const phase = ctx.phase;
   const isCathedralPhase = phase === 'placeCathedral';
+  // Whose turn input is enabled for: framework `isActive` online, else our own
+  // turn check in local AI mode.
+  const myActive = aiMode
+    ? PLAYER_COLOR[ctx.currentPlayer] === myColor && !ctx.gameover
+    : isActive;
 
   const [selected, setSelected] = useState(null); // 'cathedral' | { id, instance }
   const [orientation, setOrientation] = useState(0);
@@ -73,6 +85,47 @@ export default function CathedralBoard({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Local AI opponent (greedy, pure JS — no TensorFlow in the browser bundle).
+  // When it's the AI seat's turn, compute a move and play it via the client.
+  const aiAgent = useMemo(() => (aiColor ? makeAgent('greedy', { seed: 1 }) : null), [aiColor]);
+  const aiBusy = useRef(false);
+  useEffect(() => {
+    if (!aiAgent || ctx.gameover) return;
+    if (ctx.currentPlayer !== aiColor) return;
+    if (aiBusy.current) return;
+    aiBusy.current = true;
+    const color = PLAYER_COLOR[aiColor];
+    const dispatch = aiMoves || moves;
+    const timer = setTimeout(async () => {
+      try {
+        const snap = {
+          board: G.board,
+          stock: G.stock,
+          placedCount: G.placedCount,
+          cathedralPlaced: G.cathedralPlaced,
+        };
+        if (ctx.phase === 'placeCathedral') {
+          const ms = cathedralMoves(snap);
+          const m = await aiAgent.act(snap, 'light', 'placeCathedral', ms);
+          dispatch.placeCathedral(m.oi, m.ox, m.oy);
+        } else {
+          const ms = buildingMoves(snap, color);
+          if (ms.length) {
+            const m = await aiAgent.act(snap, color, 'main', ms);
+            dispatch.placePiece(m.pieceId, m.instance, m.oi, m.ox, m.oy);
+          }
+        }
+      } finally {
+        aiBusy.current = false;
+      }
+    }, 450);
+    return () => {
+      clearTimeout(timer);
+      aiBusy.current = false;
+    };
+    // eslint-disable-next-line
+  }, [aiAgent, aiColor, ctx.currentPlayer, ctx.turn, ctx.phase, ctx.gameover]);
+
   const selColor = selected === 'cathedral' ? 'light' : myColor || 'light';
   const selId = selected === 'cathedral' ? 'cathedral' : selected?.id;
   const orients = selId ? pieceOrientations(selId, selColor) : null;
@@ -89,7 +142,7 @@ export default function CathedralBoard({
   const onBoardPreview = preview.every(([x, y]) => x >= 0 && x < SIZE && y >= 0 && y < SIZE);
 
   function handleCellClick(x, y) {
-    if (!isActive || !selected || !shape) return;
+    if (!myActive || !selected || !shape) return;
     if (selected === 'cathedral') {
       moves.placeCathedral(oIdx, x, y);
     } else {
@@ -114,6 +167,8 @@ export default function CathedralBoard({
   let turnMsg;
   if (ctx.gameover) {
     turnMsg = 'Game over';
+  } else if (aiMode && currentColor === aiColorName) {
+    turnMsg = 'Computer is thinking…';
   } else if (isCathedralPhase) {
     turnMsg = 'Light places the Cathedral';
   } else {
@@ -138,9 +193,13 @@ export default function CathedralBoard({
             </span>
           )}
           {!myColor && <span className="you">Spectating</span>}
-          <span className={`conn ${isConnected ? 'ok' : 'bad'}`}>
-            {isConnected ? '● connected' : '● offline'}
-          </span>
+          {aiMode ? (
+            <span className="conn ok">● vs computer (greedy)</span>
+          ) : (
+            <span className={`conn ${isConnected ? 'ok' : 'bad'}`}>
+              {isConnected ? '● connected' : '● offline'}
+            </span>
+          )}
         </div>
 
         <div className="board-grid">
