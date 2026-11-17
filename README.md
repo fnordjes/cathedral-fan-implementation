@@ -73,6 +73,12 @@ play. Anyone can also **spectate** a running match from the lobby.
 > boardgame.io clients over a shared in-memory transport; the AI seat is driven
 > by the pure-JS greedy agent), so `npm run server` is only needed for online play.
 
+> **Matches live only in memory.** The server keeps all match state in RAM (no
+> database is configured), so stopping or restarting `npm run server` discards
+> every match — in-progress games, the lobby list and players' seat credentials.
+> Players then need to create and join a new match. A vs-computer game is lost
+> the same way when you reload the page or click New game.
+
 To point the client at a remote server:
 
 ```bash
