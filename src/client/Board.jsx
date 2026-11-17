@@ -4,6 +4,7 @@ import { canPlaceCells } from '../game/logic.js';
 import { buildingMoves, cathedralMoves } from '../ai/moves.js';
 import { makeAgent } from '../ai/agents.js';
 import { PLAYER_COLOR } from '../game/cathedral.js';
+import { buildLog, squaresLabel } from './moveLog.js';
 
 const SIZE = 10;
 const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
@@ -33,6 +34,42 @@ function PieceGlyph({ shape, color, cell = 14 }) {
     );
   }
   return <div className="glyph">{rows}</div>;
+}
+
+function MoveLog({ history, onHighlight }) {
+  const rows = useMemo(() => buildLog(history || []), [history]);
+  return (
+    <div className="move-log">
+      <h4>Moves</h4>
+      {rows.length === 0 ? (
+        <p className="muted small">No moves yet.</p>
+      ) : (
+        <ol className="log-list" onMouseLeave={() => onHighlight(null)}>
+          {rows.map((r) => (
+            <li key={r.n} className="log-row">
+              <div className="log-move" onMouseEnter={() => onHighlight({ cells: r.cells, kind: 'move' })}>
+                <span className="log-n">{r.n}.</span>
+                <span className={`log-dot ${r.color}`} />
+                <span>
+                  {r.who} {r.piece} <span className="muted">{r.where}</span>
+                </span>
+              </div>
+              {r.captures.map((c, k) => (
+                <div
+                  key={k}
+                  className="log-capture"
+                  onMouseEnter={() => onHighlight({ cells: c.cells, kind: 'capture' })}
+                >
+                  ✕ captured {c.name}
+                  {c.cells.length > 0 && <span className="muted"> ({squaresLabel(c.cells)})</span>}
+                </div>
+              ))}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
 }
 
 function scoreOf(stock) {
@@ -65,6 +102,7 @@ export default function CathedralBoard({
   const [selected, setSelected] = useState(null); // 'cathedral' | { id, instance }
   const [orientation, setOrientation] = useState(0);
   const [hover, setHover] = useState(null); // { x, y }
+  const [logHl, setLogHl] = useState(null); // { cells, kind } hovered in the move log
 
   // Auto-select the Cathedral for Light during the opening.
   useEffect(() => {
@@ -144,6 +182,7 @@ export default function CathedralBoard({
   }
   const previewSet = new Set(preview.map(([x, y]) => `${x},${y}`));
   const onBoardPreview = preview.every(([x, y]) => x >= 0 && x < SIZE && y >= 0 && y < SIZE);
+  const logHlSet = new Set((logHl?.cells || []).map(([x, y]) => `${x},${y}`));
 
   // Drop the selection once no copy of that piece is left in stock (e.g. the
   // last Tavern was just placed), so the board stops previewing it.
@@ -239,6 +278,7 @@ export default function CathedralBoard({
                 else if (occ?.kind === 'cathedral') cls += ' b-cathedral';
                 else if (owner) cls += ` claim-${owner}`;
                 if (inPreview && onBoardPreview) cls += previewLegal ? ' prev-ok' : ' prev-bad';
+                if (logHlSet.has(key)) cls += logHl.kind === 'capture' ? ' log-hl-capture' : ' log-hl';
                 return (
                   <div
                     key={x}
@@ -329,6 +369,8 @@ export default function CathedralBoard({
             <p className="muted">You are watching this match. Scores update live.</p>
           </div>
         )}
+
+        <MoveLog history={G.history} onHighlight={setLogHl} />
 
         <div className="howto">
           <h4>How to win</h4>

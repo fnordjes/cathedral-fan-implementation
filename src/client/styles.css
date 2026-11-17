@@ -244,3 +244,40 @@ body {
 }
 .ai-controls button:hover { background: #f6eeda; }
 .ai-controls button.sel-side { background: #a9842f; color: #fff; border-color: #a9842f; }
+
+/* ---------- Move log ---------- */
+.move-log { margin-top: 18px; }
+.move-log h4 { margin: 0 0 6px; }
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: #fffdf8;
+  border: 1px solid #e0d4ba;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.log-move, .log-capture {
+  padding: 3px 10px;
+  cursor: default;
+}
+.log-move { display: flex; align-items: center; gap: 6px; }
+.log-move:hover, .log-capture:hover { background: #f6eeda; }
+.log-n { width: 2.2em; text-align: right; color: #7a6a55; font-variant-numeric: tabular-nums; }
+.log-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+.log-dot.light { background: var(--light); border: 1px solid var(--light-edge); }
+.log-dot.dark { background: var(--dark); border: 1px solid var(--dark-edge); }
+.log-capture {
+  padding-left: calc(10px + 2.2em + 22px);
+  color: var(--bad);
+  font-weight: 600;
+}
+.cell.log-hl { box-shadow: inset 0 0 0 3px #a9842f; }
+.cell.log-hl-capture { box-shadow: inset 0 0 0 3px var(--bad); }

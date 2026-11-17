@@ -44,8 +44,7 @@ export const Cathedral = {
     placedCount: { light: 0, dark: 0 },
     cathedralPlaced: false,
     cathedralRemoved: false,
-    lastCaptured: [],
-    history: [], // simple notation log for spectators
+    history: [], // every placement + its captures; drives the UI move log
   }),
 
   phases: {
@@ -102,7 +101,6 @@ export const Cathedral = {
 
           const captured = applyBuildingMove(G, color, pieceId, instance, cells);
           if (captured === null) return INVALID_MOVE;
-          G.lastCaptured = captured;
           G.history.push({ color, pieceId, instance, cells, captured });
         },
       },
