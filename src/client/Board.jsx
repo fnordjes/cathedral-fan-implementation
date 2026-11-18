@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { pieceOrientations, PIECE_NAMES, ROSTER, pieceSize } from '../game/pieces.js';
 import { canPlaceCells } from '../game/logic.js';
 import { buildingMoves, cathedralMoves } from '../ai/moves.js';
-import { makeAgent } from '../ai/agents.js';
 import { PLAYER_COLOR } from '../game/cathedral.js';
 import { buildLog, squaresLabel } from './moveLog.js';
 
@@ -87,6 +86,8 @@ export default function CathedralBoard({
   aiColor = null, // '0' or '1' => that seat is played by the local AI
   humanColor = null, // colour the human controls in AI mode
   aiMoves = null, // move dispatcher for the AI seat (its own client)
+  aiOpponent = 'greedy', // which agent the worker runs: 'greedy' | 'mcts-r'
+  aiLabel = 'greedy', // shown in the status line
 }) {
   const aiMode = !!aiColor;
   const aiColorName = aiColor ? PLAYER_COLOR[aiColor] : null;
@@ -127,46 +128,75 @@ export default function CathedralBoard({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Local AI opponent (greedy, pure JS — no TensorFlow in the browser bundle).
-  // When it's the AI seat's turn, compute a move and play it via the client.
-  const aiAgent = useMemo(() => (aiColor ? makeAgent('greedy', { seed: 1 }) : null), [aiColor]);
-  const aiBusy = useRef(false);
+  // Local AI opponent. It runs in a Web Worker so a slow search (MCTS) does
+  // not freeze the page. One worker per board, i.e. per game.
+  const workerRef = useRef(null);
+  const reqId = useRef(0);
+  const [aiError, setAiError] = useState(null);
   useEffect(() => {
-    if (!aiAgent || ctx.gameover) return;
-    if (ctx.currentPlayer !== aiColor) return;
-    if (aiBusy.current) return;
-    aiBusy.current = true;
+    if (!aiColor) return undefined;
+    const w = new Worker(new URL('./aiWorker.js', import.meta.url), { type: 'module' });
+    workerRef.current = w;
+    return () => {
+      w.terminate();
+      workerRef.current = null;
+    };
+  }, [aiColor]);
+
+  // When it's the AI seat's turn, ask the worker for a move and play it via
+  // the AI seat's client. A request is abandoned if the turn changes or the
+  // game is torn down before the answer arrives.
+  useEffect(() => {
+    const worker = workerRef.current;
+    if (!worker || ctx.gameover || ctx.currentPlayer !== aiColor) return undefined;
     const color = PLAYER_COLOR[aiColor];
     const dispatch = aiMoves || moves;
-    const timer = setTimeout(async () => {
-      try {
-        const snap = {
-          board: G.board,
-          stock: G.stock,
-          placedCount: G.placedCount,
-          cathedralPlaced: G.cathedralPlaced,
-        };
-        if (ctx.phase === 'placeCathedral') {
-          const ms = cathedralMoves(snap);
-          const m = await aiAgent.act(snap, 'light', 'placeCathedral', ms);
-          dispatch.placeCathedral(m.oi, m.ox, m.oy);
-        } else {
-          const ms = buildingMoves(snap, color);
-          if (ms.length) {
-            const m = await aiAgent.act(snap, color, 'main', ms);
-            dispatch.placePiece(m.pieceId, m.instance, m.oi, m.ox, m.oy);
-          }
-        }
-      } finally {
-        aiBusy.current = false;
+    const state = {
+      board: G.board,
+      stock: G.stock,
+      placedCount: G.placedCount,
+      cathedralPlaced: G.cathedralPlaced,
+    };
+    const opening = ctx.phase === 'placeCathedral';
+    const legal = opening ? cathedralMoves(state) : buildingMoves(state, color);
+    if (!legal.length) return undefined;
+
+    const id = ++reqId.current;
+    const started = Date.now();
+    let cancelled = false;
+    let timer = null;
+    const onMessage = (e) => {
+      if (e.data.id !== id || cancelled) return;
+      worker.removeEventListener('message', onMessage);
+      if (e.data.error) {
+        setAiError(e.data.error);
+        return;
       }
-    }, 450);
+      const m = e.data.move;
+      // Keep a short pause so even an instant answer doesn't feel abrupt.
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        if (opening) dispatch.placeCathedral(m.oi, m.ox, m.oy);
+        else dispatch.placePiece(m.pieceId, m.instance, m.oi, m.ox, m.oy);
+      }, Math.max(0, 450 - (Date.now() - started)));
+    };
+    worker.addEventListener('message', onMessage);
+    worker.postMessage({
+      id,
+      agent: aiOpponent,
+      seed: 1,
+      state,
+      color: opening ? 'light' : color,
+      phase: opening ? 'placeCathedral' : 'main',
+      moves: legal,
+    });
     return () => {
+      cancelled = true;
       clearTimeout(timer);
-      aiBusy.current = false;
+      worker.removeEventListener('message', onMessage);
     };
     // eslint-disable-next-line
-  }, [aiAgent, aiColor, ctx.currentPlayer, ctx.turn, ctx.phase, ctx.gameover]);
+  }, [aiOpponent, aiColor, ctx.currentPlayer, ctx.turn, ctx.phase, ctx.gameover]);
 
   const selColor = selected === 'cathedral' ? 'light' : myColor || 'light';
   const selId = selected === 'cathedral' ? 'cathedral' : selected?.id;
@@ -250,7 +280,9 @@ export default function CathedralBoard({
           )}
           {!myColor && <span className="you">Spectating</span>}
           {aiMode ? (
-            <span className="conn ok">● vs computer (greedy)</span>
+            <span className={`conn ${aiError ? 'bad' : 'ok'}`}>
+              {aiError ? `● computer error: ${aiError}` : `● vs computer (${aiLabel})`}
+            </span>
           ) : (
             <span className={`conn ${isConnected ? 'ok' : 'bad'}`}>
               {isConnected ? '● connected' : '● offline'}

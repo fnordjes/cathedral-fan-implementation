@@ -33,7 +33,8 @@ src/
     features.js    Board encoding + heuristic evaluation
     tfBackend.js   Auto-selects @tensorflow/tfjs-node (native) or tfjs (pure JS)
     neuralNet.js   TensorFlow.js value net + NeuralAgent (+ JSON save/load)
-    mcts.js        Monte Carlo Tree Search (net / heuristic / rollout modes)
+    mcts.js        Monte Carlo Tree Search (heuristic / rollout modes; browser-safe)
+    mctsNet.js     Value-network MCTS (Node only, needs TensorFlow)
     train.js       Self-play trainer
     tournament.js  Local agent-vs-agent harness
     netbot.js      Run agents THROUGH the live server (SocketIO)
@@ -63,15 +64,17 @@ npm run dev
 ```
 
 Then open <http://localhost:5173>. The client opens in **Play vs computer** mode —
-a fully local game against the greedy AI that needs no server at all (pick your
-side, Dark or Light, and hit New game). Switch to **Play online** in the header
+a fully local game against the computer that needs no server at all (pick your
+side, Dark or Light, and an opponent: **Greedy**, which is fast, or **MCTS**, the
+stronger `mcts-r` search). Switch to **Play online** in the header
 to use the lobby: open it in **two** browser windows (or two machines), create a
 match, have each player join a seat (Light = player 0, Dark = player 1), and
 play. Anyone can also **spectate** a running match from the lobby.
 
 > "Play vs computer" runs the game and the bot entirely in the browser (two
 > boardgame.io clients over a shared in-memory transport; the AI seat is driven
-> by the pure-JS greedy agent), so `npm run server` is only needed for online play.
+> by the chosen agent inside a Web Worker, so the page stays responsive while it
+> thinks), so `npm run server` is only needed for online play.
 
 > **Matches live only in memory.** The server keeps all match state in RAM (no
 > database is configured), so stopping or restarting `npm run server` discards

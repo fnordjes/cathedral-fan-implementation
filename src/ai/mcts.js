@@ -12,6 +12,9 @@
 //                real result. With the default 'big' playouts (largest piece
 //                that fits, placed at random) it beats greedy clearly.
 //
+// The net-backed agent lives in mctsNet.js, so this file stays free of
+// TensorFlow and Node APIs and also runs in the browser.
+//
 // All modes share one negamax tree over the two colours; Cathedral's turn-skip
 // and exact terminal scoring are handled when children are created/rolled out.
 
@@ -26,8 +29,7 @@ import {
 } from './moves.js';
 import { canPlaceCells, enumeratePlacements, BOARD_SIZE } from '../game/logic.js';
 import { pieceOrientations } from '../game/pieces.js';
-import { encode, evaluate } from './features.js';
-import { predictValues, loadModel } from './neuralNet.js';
+import { evaluate } from './features.js';
 import { WEIGHTS } from './agents.js';
 import { makeRng } from './rng.js';
 
@@ -98,9 +100,6 @@ function sampleBigMove(state, color, rng) {
   return null;
 }
 
-export function netEvaluator(model) {
-  return (items) => predictValues(model, items.map((it) => encode(it.state, it.toMove)));
-}
 export function heuristicEvaluator(weights = WEIGHTS.greedy, scale = 15) {
   return (items) => items.map((it) => Math.tanh(evaluate(it.state, it.toMove, weights) / scale));
 }
@@ -305,11 +304,6 @@ export function mctsAgent({
   };
 }
 
-// Net-backed PUCT MCTS (loads the trained value network).
-export async function loadMctsAgent(dir, opts = {}) {
-  const model = await loadModel(dir, { compile: false });
-  return mctsAgent({ evaluator: netEvaluator(model), name: 'mcts', ...opts });
-}
 // Heuristic-backed PUCT MCTS (no model).
 export function mctsHeuristicAgent(opts = {}) {
   return mctsAgent({ evaluator: heuristicEvaluator(WEIGHTS.greedy), name: 'mcts-h', ...opts });

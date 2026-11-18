@@ -9,7 +9,8 @@
 
 import { makeAgent } from './agents.js';
 import { loadNeuralAgent, modelExists } from './neuralNet.js';
-import { loadMctsAgent, mctsHeuristicAgent, mctsRolloutAgent } from './mcts.js';
+import { mctsHeuristicAgent, mctsRolloutAgent } from './mcts.js';
+import { loadMctsAgent } from './mctsNet.js';
 
 export async function buildAgent(name, seed, netDir, { sims = 80, rollout = 'big' } = {}) {
   const simulations = Number(sims);
