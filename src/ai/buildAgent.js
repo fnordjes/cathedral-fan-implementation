@@ -4,14 +4,14 @@
 //         mcts-r | mcts-h                           (MCTS, no model)
 //         neural | mcts                             (need a trained model in netDir)
 //
-// Options: sims (MCTS simulations, default 80), rollout ('random' | 'greedy',
-// policy for mcts-r, default 'random').
+// Options: sims (MCTS simulations, default 80), rollout ('big' | 'random' |
+// 'greedy', playout policy for mcts-r, default 'big').
 
 import { makeAgent } from './agents.js';
 import { loadNeuralAgent, modelExists } from './neuralNet.js';
 import { loadMctsAgent, mctsHeuristicAgent, mctsRolloutAgent } from './mcts.js';
 
-export async function buildAgent(name, seed, netDir, { sims = 80, rollout = 'random' } = {}) {
+export async function buildAgent(name, seed, netDir, { sims = 80, rollout = 'big' } = {}) {
   const simulations = Number(sims);
   if (name === 'mcts-r') return mctsRolloutAgent({ seed, simulations, policy: rollout });
   if (name === 'mcts-h') return mctsHeuristicAgent({ seed, simulations });

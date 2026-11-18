@@ -228,8 +228,13 @@ and exact terminal scoring handled inside the search):
   values). The AlphaZero-style approach; only as strong as the net, and slow
   under pure-JS tfjs.
 - **`mcts-h`** — PUCT guided by the **greedy heuristic** (no model needed).
-- **`mcts-r`** — classic **rollouts**: play each leaf out to the end with a fast
-  policy (`--rollout random|greedy`) and use the real result.
+- **`mcts-r`** — **rollouts**: greedy-heuristic priors pick which moves to
+  search, and each leaf is played out to the end with a fast policy, using the
+  real result. Playout policy via `--rollout big|random|greedy`:
+  - `big` (default) — each turn, a random placement of the largest piece that
+    still fits. In 20 games at 80 sims it beat greedy 18–2 (+3.2 squares).
+  - `random` — any random legal placement; roughly even with greedy.
+  - `greedy` — the greedy agent's move each turn; much slower.
 
 ```bash
 npm run tournament -- mcts-h greedy 20 --sims 60
