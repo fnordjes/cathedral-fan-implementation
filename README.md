@@ -244,6 +244,10 @@ and exact terminal scoring handled inside the search):
   of ~1,900 legal moves at most one playout. Over 60 games at 80 sims vs greedy:
   without pruning 44–15–1 (+0.7 squares), with K=5 48–10–2 (+3.9).
 
+Ideas for a stronger scoring formula (shape fit, capture threats, usable
+territory) and colour-balance measurements are collected in
+[docs/ai-scoring-notes.md](docs/ai-scoring-notes.md).
+
 ```bash
 npm run tournament -- mcts-h greedy 20 --sims 60
 npm run tournament -- mcts greedy 10 --sims 80      # value-net MCTS
