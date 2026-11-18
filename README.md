@@ -235,9 +235,14 @@ and exact terminal scoring handled inside the search):
   search, and each leaf is played out to the end with a fast policy, using the
   real result. Playout policy via `--rollout big|random|greedy`:
   - `big` (default) — each turn, a random placement of the largest piece that
-    still fits. In 20 games at 80 sims it beat greedy 18–2 (+3.2 squares).
+    still fits.
   - `random` — any random legal placement; roughly even with greedy.
   - `greedy` — the greedy agent's move each turn; much slower.
+
+  `--topK` (default 5; 0 = all) keeps only the K best moves by greedy score at
+  each step of the search, so the simulations go deeper instead of giving each
+  of ~1,900 legal moves at most one playout. Over 60 games at 80 sims vs greedy:
+  without pruning 44–15–1 (+0.7 squares), with K=5 48–10–2 (+3.9).
 
 ```bash
 npm run tournament -- mcts-h greedy 20 --sims 60

@@ -163,8 +163,8 @@ function rollout(state, toMove, policy, rng) {
 }
 
 function expand(node, cfg) {
-  const moves = buildingMoves(node.state, node.toMove);
-  const meta = moves.map((m) => {
+  let moves = buildingMoves(node.state, node.toMove);
+  let meta = moves.map((m) => {
     const cs = cloneState(node.state);
     applyMove(cs, node.toMove, m);
     const nm = nextMover(cs, node.toMove);
@@ -184,11 +184,31 @@ function expand(node, cfg) {
     }
   });
   const vals = items.length ? cfg.evaluator(items) : [];
-  const childVal = meta.map((c, i) => {
-    if (c.terminal) return terminalValue(c.state, node.toMove);
-    const v = vals[idx.indexOf(i)];
-    return (c.toMove === node.toMove ? 1 : -1) * v;
+  const valAt = new Array(meta.length);
+  idx.forEach((i, k) => {
+    valAt[i] = vals[k];
   });
+  let childVal = meta.map((c, i) => {
+    if (c.terminal) return terminalValue(c.state, node.toMove);
+    return (c.toMove === node.toMove ? 1 : -1) * valAt[i];
+  });
+
+  // Optional pruning: keep only the topK moves by 1-ply value, so the
+  // simulations go deeper on plausible moves instead of spreading thinly.
+  // Many moves often tie (early on, every placement of a 5-square piece
+  // scores the same), so shuffle first: the stable sort then breaks ties
+  // randomly instead of always keeping the first moves in list order.
+  if (cfg.topK && moves.length > cfg.topK) {
+    const order = childVal.map((v, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = cfg.rng.int(i + 1);
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    const keep = order.sort((a, b) => childVal[b] - childVal[a]).slice(0, cfg.topK);
+    moves = keep.map((i) => moves[i]);
+    meta = keep.map((i) => meta[i]);
+    childVal = keep.map((i) => childVal[i]);
+  }
   node.P = softmax(childVal, cfg.priorTau);
   node.childVal = childVal; // static 1-ply values, used as fallback at selection
 
@@ -268,11 +288,12 @@ export function mctsAgent({
   simulations = 80,
   cPuct = 1.5,
   priorTau = 0.4,
+  topK = null, // keep only the K best moves (by 1-ply value) per node; null = all
   seed = 1,
   name = 'mcts',
 } = {}) {
   const rng = makeRng(seed);
-  const cfg = { evaluator, rolloutPolicy, cPuct, priorTau, rng };
+  const cfg = { evaluator, rolloutPolicy, cPuct, priorTau, topK, rng };
   return {
     name,
     async act(state, color, phase, moves) {
@@ -311,10 +332,17 @@ export function mctsHeuristicAgent(opts = {}) {
 // Rollout MCTS (no model): greedy-heuristic priors guide which moves are
 // searched; each leaf is valued by playing the game out.
 // policy: 'big' (default), 'random' or 'greedy'.
-export function mctsRolloutAgent({ policy = 'big', ...opts } = {}) {
+// topK: candidate moves kept per node. The heuristic rates ~190 opening moves
+// equally, so without pruning 80 simulations give each at most one noisy
+// playout. Measured over 60 games each at 80 sims (squares per game):
+//   head-to-head vs no pruning:  K=50 +6.7, K=10 +7.1, K=5 +9.4
+//   vs greedy:  no pruning +0.7, K=50 +2.1, K=10 +3.2, K=5 +3.9
+// so 5 is the default.
+export function mctsRolloutAgent({ policy = 'big', topK = 5, ...opts } = {}) {
   return mctsAgent({
     evaluator: heuristicEvaluator(WEIGHTS.greedy),
     rolloutPolicy: policy,
+    topK,
     name: 'mcts-r',
     ...opts,
   });
