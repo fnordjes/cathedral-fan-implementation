@@ -266,3 +266,6 @@ build. Vite resolves all of these for the browser.
 
 Rules © Chrisbo I.P. Holdings Ltd. This is an unofficial implementation for
 learning and play.
+
+The code in this repository is released under the [MIT License](LICENSE). The
+license covers this implementation only, not the Cathedral name or game.

@@ -2,6 +2,7 @@
   "name": "cathedral-game",
   "version": "1.0.0",
   "description": "Cathedral - the game of the medieval city. Networked two-player browser implementation built on boardgame.io.",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22"
