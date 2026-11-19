@@ -108,6 +108,31 @@ opening a real policy (e.g. evaluate candidate Cathedral spots by self-play).
 Also relevant for measurements: always alternate colours (the tournament
 harness already does).
 
+## Experiment: a hand-written value network (2026-11-19)
+
+Inspired by "weight-space programming" (an LLM reading and writing network
+weights directly, without gradients). `src/ai/handwritten.js` writes every
+weight of the existing value-net architecture (602 -> 256 -> 128 -> 64 -> 1)
+by hand; `test/handwritten.test.js` checks the network computes the intended
+formula exactly (max deviation < 1e-4 on 368 positions).
+
+- Greedy's evaluation is linear in the net's input, so it can be written into
+  the weights exactly (a signed value passes through ReLU layers as the pair
+  relu(x), relu(-x)). This control plays at greedy's level: 31-24-5, +1.7
+  squares over 60 games. The gradient-trained net in `src/ai/model` loses to
+  greedy 2-17.
+- Added nonlinear feature: one first-layer unit per 2x2 window that fires
+  only when all four cells are usable (relu(sum - 3)), counted for both sides.
+  It did not help: alpha 0.1 +1.6, 0.3 +0.6, 1.0 +0.2 squares vs greedy.
+- **Main finding: the input encoding is the bottleneck.** The net only sees
+  each side's remaining square *count*, not which pieces remain, so it cannot
+  compute "the opponent's Square no longer fits", the idea that decided the
+  human-vs-Claude games (section 1). Next step for this line: add per-piece
+  stock (and maybe "piece has a legal spot") to `encode()`; hand-written units
+  can then implement section 1 directly. Changing `encode()` makes the trained
+  model in `src/ai/model` incompatible, so it would need retraining or a
+  version switch.
+
 ## How to measure changes
 
 What worked for the `topK` change (commit aee3019):
