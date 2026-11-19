@@ -3,11 +3,11 @@
 // without pulling in TensorFlow or node:fs.
 
 import { mctsAgent } from './mcts.js';
-import { encode } from './features.js';
-import { predictValues, loadModel } from './neuralNet.js';
+import { predictValues, loadModel, encoderFor } from './neuralNet.js';
 
 export function netEvaluator(model) {
-  return (items) => predictValues(model, items.map((it) => encode(it.state, it.toMove)));
+  const enc = encoderFor(model);
+  return (items) => predictValues(model, items.map((it) => enc(it.state, it.toMove)));
 }
 
 export async function loadMctsAgent(dir, opts = {}) {

@@ -2,7 +2,8 @@
 // heuristic/greedy agents. Everything is from the perspective of `color`
 // (the side to move / being evaluated) so a single network serves both colours.
 
-import { BOARD_SIZE } from '../game/logic.js';
+import { BOARD_SIZE, enumeratePlacements } from '../game/logic.js';
+import { ROSTER } from '../game/pieces.js';
 import { scoreStock, territoryCount, availableSpace, otherColor } from './moves.js';
 
 export const N = BOARD_SIZE * BOARD_SIZE; // 100
@@ -30,6 +31,35 @@ export function encode(state, color) {
   v[NUM_PLANES * N + 0] = scoreStock(state.stock[color]) / 47;
   v[NUM_PLANES * N + 1] = scoreStock(state.stock[opp]) / 47;
   return v;
+}
+
+// ---- Extended encoding (v2) -----------------------------------------------
+// encode() + per side (me, then opponent) and per piece type (PIECE_IDS order):
+//   count[p] / 2   copies of p still in stock (0, 0.5 or 1)
+//   fits[p]        1 if p has at least one legal placement for that side, else 0
+// The trained net in src/ai/model uses v1; neuralNet.js picks the encoder from
+// the model's input size, so both kinds of model keep working.
+export const PIECE_IDS = Object.keys(ROSTER); // 11 piece types
+export const INPUT_DIM_V2 = INPUT_DIM + 4 * PIECE_IDS.length; // 602 + 44 = 646
+
+export function encodeV2(state, color) {
+  const v = new Float32Array(INPUT_DIM_V2);
+  v.set(encode(state, color));
+  let i = INPUT_DIM;
+  for (const side of [color, otherColor(color)]) {
+    const counts = {};
+    for (const p of state.stock[side]) counts[p.id] = (counts[p.id] || 0) + 1;
+    for (const id of PIECE_IDS) v[i++] = (counts[id] || 0) / 2;
+    for (const id of PIECE_IDS) v[i++] = enumeratePlacements(state.board, side, id).next().done ? 0 : 1;
+  }
+  return v;
+}
+
+// Encoder matching a model's input size.
+export function encoderForDim(dim) {
+  if (dim === INPUT_DIM) return encode;
+  if (dim === INPUT_DIM_V2) return encodeV2;
+  throw new Error(`no encoder for input size ${dim}`);
 }
 
 // Cheap, fast evaluation of a state from `color`'s perspective (higher better).

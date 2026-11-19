@@ -129,9 +129,29 @@ formula exactly (max deviation < 1e-4 on 368 positions).
   compute "the opponent's Square no longer fits", the idea that decided the
   human-vs-Claude games (section 1). Next step for this line: add per-piece
   stock (and maybe "piece has a legal spot") to `encode()`; hand-written units
-  can then implement section 1 directly. Changing `encode()` makes the trained
-  model in `src/ai/model` incompatible, so it would need retraining or a
-  version switch.
+  can then implement section 1 directly.
+
+### Follow-up: extended input (v2) with a shape-fit term
+
+`encodeV2()` in `features.js` adds, per side and piece type, the count left and
+whether it still has a legal placement (646 inputs). `neuralNet.js` picks the
+encoder from the model's input size, so the trained v1 model still loads. The
+hand-written v2 net (`--v2 1 --beta B`) adds `beta * (stuck_opp - stuck_me)`,
+where stuck = squares of pieces with no legal placement, via one ReLU unit per
+side and piece type: relu(count - 2*fits).
+
+| v2 vs greedy (60 games) | W-L-D | Avg margin |
+|---|---|---|
+| beta 0 (control, = v1) | 31-24-5 | +1.72 |
+| beta 0.5 | 37-18-5 | +0.73 |
+| beta 1 | 31-27-2 | -0.42 |
+| beta 2 | 38-22-0 | +0.82 |
+
+No measurable gain, and ~50% slower. Likely reason: the term only rewards a
+move that makes an opponent piece unplaceable *immediately*; what decided the
+human games was steering toward that over several moves, which a 1-ply agent
+cannot do. Next candidate: use the shape-fit term inside `mcts-r`'s heuristic
+(search can plan toward it), watching the extra cost per expansion.
 
 ## How to measure changes
 

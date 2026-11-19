@@ -2,12 +2,22 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { handwrittenModel } from '../src/ai/handwritten.js';
 import { predictValues } from '../src/ai/neuralNet.js';
-import { encode } from '../src/ai/features.js';
+import { encode, encodeV2 } from '../src/ai/features.js';
+import { enumeratePlacements } from '../src/game/logic.js';
+import { pieceSize } from '../src/game/pieces.js';
 import { initialState, cathedralMoves, buildingMoves, applyMove, scoreStock, territoryCount, otherColor } from '../src/ai/moves.js';
 import { makeRng } from '../src/ai/rng.js';
 
 // Reference implementation of what the hand-written weights are meant to compute.
-function expectedD(state, c, { alpha, k }) {
+function stuckSquares(state, side) {
+  let n = 0;
+  for (const p of state.stock[side]) {
+    if (enumeratePlacements(state.board, side, p.id).next().done) n += pieceSize(p.id);
+  }
+  return n;
+}
+
+function expectedD(state, c, { alpha, k, v2 = false, beta = 0 }) {
   const o = otherColor(c);
   const usable = (col, x, y) => state.board.cells[y][x] === null && state.board.owner[y][x] !== otherColor(col);
   const windows = (col) => {
@@ -20,7 +30,8 @@ function expectedD(state, c, { alpha, k }) {
   return (
     scoreStock(state.stock[o]) - scoreStock(state.stock[c]) +
     (0.5 + k) * (territoryCount(state.board, c) - territoryCount(state.board, o)) +
-    alpha * (windows(c) - windows(o))
+    alpha * (windows(c) - windows(o)) +
+    (v2 ? beta * (stuckSquares(state, o) - stuckSquares(state, c)) : 0)
   );
 }
 
@@ -47,5 +58,32 @@ test('hand-written net computes tanh(D/15) for the documented D', () => {
     worst = Math.max(worst, Math.abs(vals[i] - Math.tanh(x.d / 15)));
   });
   assert.ok(samples.length > 50);
+  assert.ok(worst < 1e-4, `max deviation ${worst}`);
+});
+
+test('v2 hand-written net adds beta * (stuck_opp - stuck_me)', () => {
+  const opts = { alpha: 0.1, k: 0.05, v2: true, beta: 0.7 };
+  const model = handwrittenModel(opts);
+  const rng = makeRng(7);
+  const samples = [];
+  for (let g = 0; g < 4; g++) {
+    const s = initialState();
+    applyMove(s, 'light', rng.pick(cathedralMoves(s)));
+    let cur = 'dark';
+    for (let ply = 0; ply < 60; ply++) {
+      const ms = buildingMoves(s, cur);
+      if (!ms.length) break;
+      applyMove(s, cur, rng.pick(ms));
+      for (const c of ['light', 'dark']) samples.push({ f: encodeV2(s, c), d: expectedD(s, c, opts), stuck: stuckSquares(s, 'light') + stuckSquares(s, 'dark') > 0 });
+      cur = otherColor(cur);
+    }
+  }
+  const vals = predictValues(model, samples.map((x) => x.f));
+  let worst = 0;
+  samples.forEach((x, i) => {
+    worst = Math.max(worst, Math.abs(vals[i] - Math.tanh(x.d / 15)));
+  });
+  assert.ok(samples.length > 50);
+  assert.ok(samples.some((x) => x.stuck), 'expected some positions with stuck pieces');
   assert.ok(worst < 1e-4, `max deviation ${worst}`);
 });

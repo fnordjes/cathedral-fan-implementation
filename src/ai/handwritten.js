@@ -4,6 +4,7 @@
 // existing `neural` and `mcts` agents can load it unchanged.
 //
 //   node src/ai/handwritten.js [--out src/ai/model-handwritten] [--alpha 0] [--k 0.05]
+//                              [--v2 1 --beta 1]
 //   npm run tournament -- neural greedy 60 --net src/ai/model-handwritten
 //
 // Input (features.js, from the side `c` being evaluated): 6 planes x 100
@@ -41,7 +42,23 @@
 // The window feature did not help, so the default is alpha = 0. For
 // comparison, the gradient-trained net in src/ai/model loses to greedy 2-17.
 //
-// Layer plan (sizes fixed by createModel: 602 -> 256 -> 128 -> 64 -> 1):
+// v2 (extended input, features.js encodeV2: + per side and piece type the
+// count left and whether it still has a legal placement) adds a shape-fit term:
+//
+//   D += beta * (stuck_opp - stuck_me)
+//   stuck(side) = sum over piece types p of size(p) * count(p) * (1 - fits(p))
+//
+// i.e. squares of pieces that can no longer be placed anywhere, which count
+// against the final score just like unplaced ones. Each count*(1-fits) is one
+// L1 unit: relu(count - 2*fits) (count <= 2, so fits=1 gives 0, fits=0 gives
+// count). The "fits" bit is computed by the encoder, not by the network.
+//
+// Result (2026-11-19, v2, 60 games each vs greedy): beta 0 31-24-5 +1.72
+// (identical games to v1 alpha 0, as expected), beta 0.5 37-18-5 +0.73,
+// beta 1 31-27-2 -0.42, beta 2 38-22-0 +0.82. No measurable gain at 1-ply,
+// and ~50% slower (the fits check runs for every candidate move).
+//
+// Layer plan (sizes fixed by createModel: 602 (v2: 646) -> 256 -> 128 -> 64 -> 1):
 //   L1 (256): unit 0 = relu(+L), unit 1 = relu(-L) where L is the linear part
 //             of D; units 2..82 = my 81 windows, 83..163 = opp windows; rest 0.
 //   L2 (128): unit 0 = relu(+D), unit 1 = relu(-D) (recombines L and windows).
@@ -52,14 +69,16 @@
 import path from 'node:path';
 import tf from './tfBackend.js';
 import { createModel, saveModel } from './neuralNet.js';
-import { N, NUM_PLANES, INPUT_DIM } from './features.js';
+import { N, NUM_PLANES, INPUT_DIM, INPUT_DIM_V2, PIECE_IDS } from './features.js';
+import { pieceSize } from '../game/pieces.js';
 
 const SIZE = 10;
 const SCALE = 15;
 
-export function buildWeights({ alpha = 0, k = 0.05 } = {}) {
+export function buildWeights({ alpha = 0, k = 0.05, v2 = false, beta = 1 } = {}) {
   const H1 = 256, H2 = 128, H3 = 64;
-  const W1 = new Float32Array(INPUT_DIM * H1); // [in][out], row-major
+  const IN = v2 ? INPUT_DIM_V2 : INPUT_DIM;
+  const W1 = new Float32Array(IN * H1); // [in][out], row-major
   const b1 = new Float32Array(H1);
   const W2 = new Float32Array(H1 * H2);
   const b2 = new Float32Array(H2);
@@ -94,11 +113,27 @@ export function buildWeights({ alpha = 0, k = 0.05 } = {}) {
     }
   }
 
-  // --- L2 units 0/1: D = L + alpha * (W_me - W_opp), as (+D, -D) ---
+  // --- v2: L1 units 164..185: copies of each piece type that cannot be placed ---
+  // Input layout after the 602 v1 inputs: me counts, me fits, opp counts, opp fits.
+  const stuck = { me: [], opp: [] };
+  if (v2) {
+    const P = PIECE_IDS.length;
+    PIECE_IDS.forEach((id, j) => {
+      for (const [side, off] of [['me', 0], ['opp', 2 * P]]) {
+        w1(INPUT_DIM + off + j, unit, 2); // count/2 * 2 = count
+        w1(INPUT_DIM + off + P + j, unit, -2); // - 2 * fits
+        stuck[side].push([unit++, pieceSize(id)]);
+      }
+    });
+  }
+
+  // --- L2 units 0/1: D = L + alpha * (W_me - W_opp) + beta * (stuck_opp - stuck_me) ---
   const w2 = (i, o, v) => { W2[i * H2 + o] += v; };
   const toD = [[0, 1], [1, -1]];
   for (const u of windows.me) toD.push([u, alpha]);
   for (const u of windows.opp) toD.push([u, -alpha]);
+  for (const [u, size] of stuck.opp) toD.push([u, beta * size]);
+  for (const [u, size] of stuck.me) toD.push([u, -beta * size]);
   for (const [i, v] of toD) { w2(i, 0, v); w2(i, 1, -v); }
 
   // --- L3: pass the pair through; output: tanh((u0 - u1) / SCALE) ---
@@ -108,15 +143,15 @@ export function buildWeights({ alpha = 0, k = 0.05 } = {}) {
   W4[1] = -1 / SCALE;
 
   return [
-    tf.tensor2d(W1, [INPUT_DIM, H1]), tf.tensor1d(b1),
+    tf.tensor2d(W1, [IN, H1]), tf.tensor1d(b1),
     tf.tensor2d(W2, [H1, H2]), tf.tensor1d(b2),
     tf.tensor2d(W3, [H2, H3]), tf.tensor1d(b3),
     tf.tensor2d(W4, [H3, 1]), tf.tensor1d(b4),
   ];
 }
 
-export function handwrittenModel(opts) {
-  const model = createModel();
+export function handwrittenModel(opts = {}) {
+  const model = createModel(opts.v2 ? INPUT_DIM_V2 : INPUT_DIM);
   model.setWeights(buildWeights(opts));
   return model;
 }
@@ -127,9 +162,11 @@ async function main() {
   );
   const alpha = Number(args.alpha ?? 0);
   const k = Number(args.k ?? 0.05);
+  const v2 = args.v2 === '1' || args.v2 === 'true';
+  const beta = Number(args.beta ?? 1);
   const out = path.resolve(process.cwd(), args.out || 'src/ai/model-handwritten');
-  await saveModel(handwrittenModel({ alpha, k }), out);
-  console.log(`Wrote hand-written value net (alpha=${alpha}, k=${k}) to ${out}`);
+  await saveModel(handwrittenModel({ alpha, k, v2, beta }), out);
+  console.log(`Wrote hand-written value net (alpha=${alpha}, k=${k}${v2 ? `, v2, beta=${beta}` : ''}) to ${out}`);
 }
 
 if (import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}` || process.argv[1]?.endsWith('handwritten.js')) {

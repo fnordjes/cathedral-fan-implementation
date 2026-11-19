@@ -13,12 +13,12 @@ import tf from './tfBackend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { cloneState, applyMove, otherColor, hasLegalMove, scoreStock } from './moves.js';
-import { encode, INPUT_DIM } from './features.js';
+import { INPUT_DIM, encoderForDim } from './features.js';
 import { makeRng } from './rng.js';
 
-export function createModel() {
+export function createModel(inputDim = INPUT_DIM) {
   const m = tf.sequential();
-  m.add(tf.layers.dense({ inputShape: [INPUT_DIM], units: 256, activation: 'relu' }));
+  m.add(tf.layers.dense({ inputShape: [inputDim], units: 256, activation: 'relu' }));
   m.add(tf.layers.dense({ units: 128, activation: 'relu' }));
   m.add(tf.layers.dense({ units: 64, activation: 'relu' }));
   m.add(tf.layers.dense({ units: 1, activation: 'tanh' }));
@@ -64,12 +64,18 @@ export async function loadModel(dir, { compile = false } = {}) {
   return model;
 }
 
+// The feature encoder matching a model (v1 or v2, by input size).
+export function encoderFor(model) {
+  return encoderForDim(model.inputs[0].shape[1]);
+}
+
 // Batch-evaluate a list of Float32Array feature vectors -> number[].
 export function predictValues(model, featureList) {
   return tf.tidy(() => {
-    const flat = new Float32Array(featureList.length * INPUT_DIM);
-    featureList.forEach((f, i) => flat.set(f, i * INPUT_DIM));
-    const t = tf.tensor2d(flat, [featureList.length, INPUT_DIM]);
+    const dim = featureList[0].length;
+    const flat = new Float32Array(featureList.length * dim);
+    featureList.forEach((f, i) => flat.set(f, i * dim));
+    const t = tf.tensor2d(flat, [featureList.length, dim]);
     const out = model.predict(t);
     return Array.from(out.dataSync());
   });
@@ -84,6 +90,7 @@ function outcomeFor(state, color) {
 }
 
 export function neuralAgent(model, { seed = 1, epsilon = 0, name = 'neural' } = {}) {
+  const enc = encoderFor(model);
   const rng = makeRng(seed);
   return {
     name,
@@ -103,10 +110,10 @@ export function neuralAgent(model, { seed = 1, epsilon = 0, name = 'neural' } = 
         const next = cloneState(state);
         applyMove(next, color, move);
         if (hasLegalMove(next.board, opp, next.stock[opp])) {
-          feats.push(encode(next, opp));
+          feats.push(enc(next, opp));
           featSign.push([i, 1]);
         } else if (hasLegalMove(next.board, color, next.stock[color])) {
-          feats.push(encode(next, color)); // we move again: our value, negated
+          feats.push(enc(next, color)); // we move again: our value, negated
           featSign.push([i, -1]);
         } else {
           scores[i] = -outcomeFor(next, color); // game over: exact result
