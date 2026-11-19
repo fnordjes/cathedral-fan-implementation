@@ -4,7 +4,7 @@
 
 import { BOARD_SIZE, enumeratePlacements } from '../game/logic.js';
 import { ROSTER } from '../game/pieces.js';
-import { scoreStock, territoryCount, availableSpace, otherColor } from './moves.js';
+import { scoreStock, territoryCount, availableSpace, otherColor, stuckSquares } from './moves.js';
 
 export const N = BOARD_SIZE * BOARD_SIZE; // 100
 export const NUM_PLANES = 6;
@@ -74,5 +74,9 @@ export function evaluate(state, color, w) {
   const territoryDiff =
     territoryCount(state.board, color) - territoryCount(state.board, opp);
   const oppSpace = availableSpace(state.board, opp);
-  return w.placed * placedDiff + w.territory * territoryDiff - w.oppSpace * oppSpace;
+  let v = w.placed * placedDiff + w.territory * territoryDiff - w.oppSpace * oppSpace;
+  // Optional shape-fit term: pieces that can no longer be placed anywhere.
+  // Off unless w.stuck is set (it costs a placement search per piece type).
+  if (w.stuck) v += w.stuck * (stuckSquares(state, opp) - stuckSquares(state, color));
+  return v;
 }

@@ -150,8 +150,31 @@ side and piece type: relu(count - 2*fits).
 No measurable gain, and ~50% slower. Likely reason: the term only rewards a
 move that makes an opponent piece unplaceable *immediately*; what decided the
 human games was steering toward that over several moves, which a 1-ply agent
-cannot do. Next candidate: use the shape-fit term inside `mcts-r`'s heuristic
-(search can plan toward it), watching the extra cost per expansion.
+cannot do.
+
+### Follow-up: the shape-fit term inside mcts-r
+
+`evaluate()` takes an optional `stuck` weight (`stuckSquares()` in `moves.js`),
+and `mcts-r` accepts `stuck` (CLI `--stuck`) to use it in the heuristic that
+picks and ranks its topK candidates. Default 0 = off.
+
+| mcts-r with stuck vs plain mcts-r (60 games, 80 sims) | W-L-D | Avg margin |
+|---|---|---|
+| stuck 0.5 | 25-26-9 | -0.32 |
+| stuck 1.0 | 24-30-6 | -0.47 |
+
+No gain, and moves take ~4x longer (0.35 s -> 1.32 s average, slowest 1.5 s
+-> 7.9 s, single process).
+
+Replaying human-vs-Claude game 1 up to Dark's decisive Manor on B2 showed why:
+**the existing greedy formula already finds that idea there.** All five of its
+top-rated moves strand Light's Square and Abbey (8 squares), because the
+"opponent's usable space" term rewards blocking that corner; mcts-r plays an
+Inn on A2-A3-B3 with the same effect, with or without the stuck term. So
+section 1's diagnosis was partly wrong: in that position the bots were not
+blind to shape fit. What separated the human games from bot play is more
+likely the multi-move plans (setting up pockets, forcing replies) and the
+capture threats from section 2, which remain untested.
 
 ## How to measure changes
 

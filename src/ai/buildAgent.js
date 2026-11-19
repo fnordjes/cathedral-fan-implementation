@@ -13,11 +13,12 @@ import { loadNeuralAgent, modelExists } from './neuralNet.js';
 import { mctsHeuristicAgent, mctsRolloutAgent } from './mcts.js';
 import { loadMctsAgent } from './mctsNet.js';
 
-export async function buildAgent(name, seed, netDir, { sims = 80, rollout = 'big', topK } = {}) {
+export async function buildAgent(name, seed, netDir, { sims = 80, rollout = 'big', topK, stuck } = {}) {
   const simulations = Number(sims);
   if (name === 'mcts-r') {
     const opts = { seed, simulations, policy: rollout };
     if (topK !== undefined) opts.topK = Number(topK) || null; // 0 => all moves
+    if (stuck !== undefined) opts.stuck = Number(stuck);
     return mctsRolloutAgent(opts);
   }
   if (name === 'mcts-h') return mctsHeuristicAgent({ seed, simulations });

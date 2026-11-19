@@ -93,6 +93,19 @@ export function applyMove(s, color, move) {
   return captured;
 }
 
+// Squares of `color`'s remaining pieces that have no legal placement at all.
+// Such pieces will (barring a capture that frees space) stay unplaced, so
+// these squares are effectively already lost.
+export function stuckSquares(state, color) {
+  const counts = new Map();
+  for (const p of state.stock[color]) counts.set(p.id, (counts.get(p.id) || 0) + 1);
+  let n = 0;
+  for (const [id, count] of counts) {
+    if (enumeratePlacements(state.board, color, id).next().done) n += count * pieceSize(id);
+  }
+  return n;
+}
+
 // Squares of empty territory owned by `color`.
 export function territoryCount(board, color) {
   let n = 0;

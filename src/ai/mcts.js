@@ -338,9 +338,11 @@ export function mctsHeuristicAgent(opts = {}) {
 //   head-to-head vs no pruning:  K=50 +6.7, K=10 +7.1, K=5 +9.4
 //   vs greedy:  no pruning +0.7, K=50 +2.1, K=10 +3.2, K=5 +3.9
 // so 5 is the default.
-export function mctsRolloutAgent({ policy = 'big', topK = 5, ...opts } = {}) {
+// stuck: weight of the shape-fit term in the heuristic that picks and ranks the
+// topK candidates (squares of pieces with no legal placement; 0 = off).
+export function mctsRolloutAgent({ policy = 'big', topK = 5, stuck = 0, ...opts } = {}) {
   return mctsAgent({
-    evaluator: heuristicEvaluator(WEIGHTS.greedy),
+    evaluator: heuristicEvaluator(stuck ? { ...WEIGHTS.greedy, stuck } : WEIGHTS.greedy),
     rolloutPolicy: policy,
     topK,
     name: 'mcts-r',
